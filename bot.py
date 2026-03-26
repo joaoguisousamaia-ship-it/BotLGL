@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 CONFIG_PATH = Path("config.json")
 TICKET_CATEGORY_NAME = "Tickets"
 QUESTION_TIMEOUT = 300
+CHANNEL_DELETION_DELAY_SECONDS = 3
 
 DEFAULT_QUESTIONS = [
     "Qual e o seu nome ingame?",
@@ -275,8 +277,16 @@ async def run_questionnaire(
             await channel.send("Nenhum canal de transcript configurado. Configure com /configurar_canal ou /logs.")
     except TimeoutError:
         await channel.send(f"Tempo expirado para {user.mention}. Processo cancelado.")
+    except Exception:
+        logger.exception("Unexpected error in run_questionnaire for user %s", user.id)
+        await channel.send("Ocorreu um erro inesperado. O canal sera deletado em breve.")
     finally:
         sessions.pop(user.id, None)
+        await asyncio.sleep(CHANNEL_DELETION_DELAY_SECONDS)
+        try:
+            await channel.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            logger.warning("Failed to delete ticket channel %s", channel.id)
 
 
 async def create_ticket_channel(interaction: discord.Interaction) -> discord.TextChannel | None:
