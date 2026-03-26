@@ -82,13 +82,6 @@ def update_guild_config(guild_id: int, key: str, value: int | None) -> None:
     save_config(config)
 
 
-def get_guild_questions(guild_id: int) -> list[str]:
-    guild_config = get_guild_config(guild_id)
-    custom = guild_config.get("custom_questions")
-    if custom and isinstance(custom, list) and len(custom) > 0:
-        return custom
-    return DEFAULT_QUESTIONS
-
 
 def get_channel_from_config(guild: discord.Guild, channel_id: int | None) -> discord.abc.GuildChannel | None:
     if not channel_id:
@@ -390,7 +383,7 @@ class TicketButtonView(discord.ui.View):
             return
 
         await interaction.response.send_message(f"Ticket criado em {channel.mention}.", ephemeral=True)
-        await run_questionnaire(interaction, channel, get_guild_questions(interaction.guild.id))
+        await run_questionnaire(interaction, channel, DEFAULT_QUESTIONS)
 
 
 @bot.event
@@ -516,38 +509,6 @@ async def enviar_botao_ticket(interaction: discord.Interaction, canal: discord.T
     await canal.send("Clique no botao abaixo para abrir seu ticket.", view=TicketButtonView())
     await interaction.response.send_message(f"Painel enviado em {canal.mention}.", ephemeral=True)
 
-
-@bot.tree.command(name="configurar_perguntas", description="Define as perguntas do formulario para este servidor")
-@app_commands.checks.has_permissions(administrator=True)
-async def configurar_perguntas(interaction: discord.Interaction, perguntas: str) -> None:
-    if interaction.guild is None:
-        await interaction.response.send_message("Use este comando em um servidor.", ephemeral=True)
-        return
-
-    separadores = ["\n", "|"]
-    lista: list[str] = []
-    for sep in separadores:
-        if sep in perguntas:
-            lista = [q.strip() for q in perguntas.split(sep) if q.strip()]
-            break
-    if not lista:
-        lista = [perguntas.strip()]
-
-    if len(lista) < 1:
-        await interaction.response.send_message("Nenhuma pergunta valida encontrada.", ephemeral=True)
-        return
-
-    guild_config = get_guild_config(interaction.guild.id)
-    guild_config["custom_questions"] = lista
-    save_config(config)
-
-    preview = "\n".join(f"{i}. {q}" for i, q in enumerate(lista, start=1))
-    await interaction.response.send_message(
-        f"Perguntas definidas ({len(lista)} no total):\n{preview}",
-        ephemeral=True,
-    )
-
-
 @bot.tree.command(name="set", description="Cria um ticket e inicia as perguntas")
 async def set_channel(interaction: discord.Interaction) -> None:
     channel = await create_ticket_channel(interaction)
@@ -556,7 +517,7 @@ async def set_channel(interaction: discord.Interaction) -> None:
         return
 
     await interaction.response.send_message(f"Ticket criado em {channel.mention}.", ephemeral=True)
-    await run_questionnaire(interaction, channel, get_guild_questions(interaction.guild.id))
+    await run_questionnaire(interaction, channel, DEFAULT_QUESTIONS)
 
 
 @bot.tree.command(name="questoes", description="Faz as perguntas no canal atual")
@@ -570,7 +531,7 @@ async def questoes(interaction: discord.Interaction) -> None:
         return
 
     await interaction.response.send_message("Perguntas iniciadas neste canal.", ephemeral=True)
-    await run_questionnaire(interaction, interaction.channel, get_guild_questions(interaction.guild.id))
+    await run_questionnaire(interaction, interaction.channel, DEFAULT_QUESTIONS)
 
 
 @commands.has_permissions(manage_roles=True)
@@ -630,7 +591,6 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
 @logs.error
 @publicar_ticket.error
 @enviar_botao_ticket.error
-@configurar_perguntas.error
 async def admin_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
     if isinstance(error, app_commands.errors.MissingPermissions):
         if interaction.response.is_done():
