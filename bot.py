@@ -72,6 +72,7 @@ def get_guild_config(guild_id: int) -> dict:
             "ticket_panel_channel_id": None,
             "ticket_category_id": None,
             "staff_role_id": None,
+            "legal_team_role_id": None,
         },
     )
 
@@ -360,6 +361,22 @@ class TranscriptReviewView(discord.ui.View):
                 "Transcript aceito",
                 extra=f"Arquivo salvo: {file_name}",
             )
+            guild_config = get_guild_config(interaction.guild.id)
+            legal_role = get_role_from_config(interaction.guild, guild_config.get("legal_team_role_id"))
+            if legal_role is not None:
+                member = interaction.guild.get_member(self.user_id)
+                if member is not None:
+                    try:
+                        await member.add_roles(legal_role, reason="Transcript aceito")
+                        await send_cargo_log(
+                            interaction.guild,
+                            interaction.user,
+                            "Cargo adicionado",
+                            member=member,
+                            role=legal_role,
+                        )
+                    except (discord.Forbidden, discord.HTTPException):
+                        logger.warning("Failed to assign legal team role to user %s", self.user_id)
         asyncio.create_task(self._delete_channel_after_delay())
 
     @discord.ui.button(label="Rejeitar", style=discord.ButtonStyle.red, custom_id="transcript_reject")
@@ -449,6 +466,19 @@ async def configurar_staff(interaction: discord.Interaction, cargo: discord.Role
     update_guild_config(interaction.guild.id, "staff_role_id", cargo.id)
     await interaction.response.send_message(
         f"Cargo staff definido para {cargo.mention}.",
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="configurar_cargo_legal", description="Define o cargo atribuido automaticamente ao aceitar um transcript")
+@app_commands.checks.has_permissions(administrator=True)
+async def configurar_cargo_legal(interaction: discord.Interaction, cargo: discord.Role) -> None:
+    if interaction.guild is None:
+        await interaction.response.send_message("Use este comando em um servidor.", ephemeral=True)
+        return
+    update_guild_config(interaction.guild.id, "legal_team_role_id", cargo.id)
+    await interaction.response.send_message(
+        f"Cargo Equipe Legal definido para {cargo.mention}.",
         ephemeral=True,
     )
 
@@ -592,6 +622,7 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
 @configurar_canal.error
 @configurar_revisor.error
 @configurar_staff.error
+@configurar_cargo_legal.error
 @configurar_logs_sets.error
 @logs.error
 @publicar_ticket.error
