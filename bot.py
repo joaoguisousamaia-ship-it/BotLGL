@@ -67,6 +67,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 config_store = ConfigStore(CONFIG_FILE)
 
 
+def normalize_channel_slug(raw_name: str) -> str:
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in raw_name)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    slug = slug.strip("-")
+    return slug[:70] if slug else "usuario"
+
+
 def is_admin(member: discord.Member) -> bool:
     return member.guild_permissions.administrator
 
@@ -94,7 +102,7 @@ class TicketPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Abrir Ticket", style=discord.ButtonStyle.green, custom_id="ticket:open")
+    @discord.ui.button(label="Pedir-Set", style=discord.ButtonStyle.green, custom_id="ticket:open")
     async def open_ticket(self, interaction: discord.Interaction, _: discord.ui.Button):
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("Comando invalido fora de servidor.", ephemeral=True)
@@ -104,7 +112,10 @@ class TicketPanel(discord.ui.View):
         user = interaction.user
         cfg = config_store.get_guild(guild.id)
 
-        existing = discord.utils.get(guild.channels, name=f"ticket-{user.id}")
+        name_slug = normalize_channel_slug(user.display_name)
+        ticket_name = f"pedido-{name_slug}"
+
+        existing = discord.utils.get(guild.channels, name=ticket_name)
         if existing:
             await interaction.response.send_message(
                 f"Voce ja possui um ticket aberto: {existing.mention}", ephemeral=True
@@ -126,15 +137,22 @@ class TicketPanel(discord.ui.View):
 
         category = guild.get_channel(cfg.get("ticket_category_id")) if cfg.get("ticket_category_id") else None
         channel = await guild.create_text_channel(
-            name=f"ticket-{user.id}",
+            name=ticket_name,
             category=category if isinstance(category, discord.CategoryChannel) else None,
             overwrites=overwrites,
             reason=f"Ticket aberto por {user}",
         )
 
         embed = discord.Embed(
-            title="Ticket criado",
-            description="Explique seu pedido e aguarde um revisor responder.",
+            title="Pedido-Set criado",
+            description=(
+                "Responda as perguntas abaixo para facilitar a analise.\n\n"
+                "1) Qual set/cargo voce quer solicitar?\n"
+                "2) Qual seu nick/ID no jogo?\n"
+                "3) Qual o motivo da solicitacao?\n"
+                "4) Voce tem provas/prints? Envie aqui.\n"
+                "5) Algo mais que a revisao precisa saber?"
+            ),
             color=discord.Color.blue(),
         )
         await channel.send(content=user.mention, embed=embed)
@@ -219,15 +237,19 @@ async def logs(interaction: discord.Interaction, canal: discord.TextChannel):
 @commands.has_permissions(manage_roles=True)
 async def addcargo(ctx: commands.Context, membro: discord.Member, cargo: discord.Role):
     if ctx.guild is None:
-        await ctx.reply("Use esse comando em um servidor.")
+        await ctx.reply("Use esse comando em um servidor.", delete_after=5)
         return
 
     if cargo >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-        await ctx.reply("Voce nao pode gerenciar um cargo acima ou igual ao seu.")
+        await ctx.reply("❌ Voce nao pode gerenciar um cargo acima ou igual ao seu.", delete_after=5)
         return
 
     await membro.add_roles(cargo, reason=f"Adicionado por {ctx.author}")
-    await ctx.reply(f"Cargo {cargo.mention} adicionado para {membro.mention}.")
+    await ctx.reply(f"✅ Cargo {cargo.mention} adicionado para {membro.mention}.", delete_after=5)
+    try:
+        await ctx.message.delete(delay=5)
+    except discord.HTTPException:
+        pass
     await send_log(ctx.guild, "Cargo adicionado", f"{ctx.author.mention} adicionou {cargo.mention} em {membro.mention}")
 
 
@@ -235,15 +257,19 @@ async def addcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
 @commands.has_permissions(manage_roles=True)
 async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord.Role):
     if ctx.guild is None:
-        await ctx.reply("Use esse comando em um servidor.")
+        await ctx.reply("Use esse comando em um servidor.", delete_after=5)
         return
 
     if cargo >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-        await ctx.reply("Voce nao pode gerenciar um cargo acima ou igual ao seu.")
+        await ctx.reply("❌ Voce nao pode gerenciar um cargo acima ou igual ao seu.", delete_after=5)
         return
 
     await membro.remove_roles(cargo, reason=f"Removido por {ctx.author}")
-    await ctx.reply(f"Cargo {cargo.mention} removido de {membro.mention}.")
+    await ctx.reply(f"✅ Cargo {cargo.mention} removido de {membro.mention}.", delete_after=5)
+    try:
+        await ctx.message.delete(delay=5)
+    except discord.HTTPException:
+        pass
     await send_log(ctx.guild, "Cargo removido", f"{ctx.author.mention} removeu {cargo.mention} de {membro.mention}")
 
 
@@ -251,11 +277,11 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
 @remcargo.error
 async def role_cmd_error(ctx: commands.Context, error: commands.CommandError):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.reply("Voce precisa da permissao de Gerenciar Cargos para usar esse comando.")
+        await ctx.reply("❌ Voce precisa da permissao de Gerenciar Cargos para usar esse comando.", delete_after=5)
     elif isinstance(error, commands.BadArgument):
-        await ctx.reply("Uso correto: !addcargo @membro @cargo / !remcargo @membro @cargo")
+        await ctx.reply("⚠️ Uso correto: !addcargo @membro @cargo / !remcargo @membro @cargo", delete_after=5)
     else:
-        await ctx.reply(f"Erro: {error}")
+        await ctx.reply(f"❌ Erro: {error}", delete_after=5)
 
 
 if __name__ == "__main__":
