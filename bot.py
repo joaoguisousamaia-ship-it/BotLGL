@@ -37,8 +37,6 @@ def normalize_channel_slug(raw_name: str) -> str:
         slug = slug.replace("--", "-")
     slug = slug.strip("-")
     return slug[:70] if slug else "usuario"
-
-
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
         return {"guilds": {}}
@@ -506,7 +504,6 @@ async def addcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
     if cargo >= ctx.author.top_role and ctx.author != ctx.guild.owner:
         await ctx.send("Voce nao pode gerenciar um cargo acima ou igual ao seu.", delete_after=10)
         return
-
     await membro.add_roles(cargo, reason=f"Adicionado por {ctx.author}")
     await ctx.send(f"Cargo {cargo.mention} adicionado a {membro.mention}.", delete_after=10)
     await send_action_log(ctx.guild, ctx.author, "Cargo adicionado", member=membro, role=cargo)
@@ -527,7 +524,6 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
     if cargo >= ctx.author.top_role and ctx.author != ctx.guild.owner:
         await ctx.send("Voce nao pode gerenciar um cargo acima ou igual ao seu.", delete_after=10)
         return
-
     await membro.remove_roles(cargo, reason=f"Removido por {ctx.author}")
     await ctx.send(f"Cargo {cargo.mention} removido de {membro.mention}.", delete_after=10)
     await send_action_log(ctx.guild, ctx.author, "Cargo removido", member=membro, role=cargo)
