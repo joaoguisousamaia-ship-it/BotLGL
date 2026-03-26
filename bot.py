@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 CONFIG_PATH = Path("config.json")
 TICKET_CATEGORY_NAME = "Tickets"
 QUESTION_TIMEOUT = 300
+CHANNEL_DELETE_DELAY = 3
 
 DEFAULT_QUESTIONS = [
     "Qual e o seu nome ingame?",
@@ -235,11 +237,15 @@ async def run_questionnaire(
 
     try:
         for index, question in enumerate(questions, start=1):
+            progress_bar = "█" * index + "░" * (len(questions) - index)
             embed = discord.Embed(
-                title=f"Pergunta {index} de {len(questions)}",
-                description=question,
+                title="📋 Formulário de Entrada",
+                description=f"**{question}**",
                 color=discord.Color.blurple(),
             )
+            embed.add_field(name="Pergunta", value=f"{index} de {len(questions)}", inline=True)
+            embed.add_field(name="Progresso", value=f"`{progress_bar}`", inline=True)
+            embed.add_field(name="Usuário", value=user.mention, inline=True)
             embed.set_footer(text="Responda nesta sala em ate 5 minutos")
             await channel.send(content=user.mention, embed=embed)
 
@@ -269,12 +275,17 @@ async def run_questionnaire(
         if isinstance(transcript_channel, discord.TextChannel):
             review_message = await transcript_channel.send(embed=embed, view=view)
             view.message = review_message
-            await channel.send("Transcript enviado para revisao.")
+            await channel.send(f"✅ Formulário concluído! Este canal será deletado em {CHANNEL_DELETE_DELAY} segundos.")
         else:
             await channel.send(embed=embed)
-            await channel.send("Nenhum canal de transcript configurado. Configure com /configurar_canal ou /logs.")
+            await channel.send(f"✅ Formulário concluído! Este canal será deletado em {CHANNEL_DELETE_DELAY} segundos.\n(Nenhum canal de transcript configurado. Configure com /configurar_canal ou /logs.)")
+
+        await asyncio.sleep(CHANNEL_DELETE_DELAY)
+        await channel.delete(reason="Formulário concluído")
     except TimeoutError:
-        await channel.send(f"Tempo expirado para {user.mention}. Processo cancelado.")
+        await channel.send(f"⏰ Tempo expirado para {user.mention}. Este canal será deletado em {CHANNEL_DELETE_DELAY} segundos.")
+        await asyncio.sleep(CHANNEL_DELETE_DELAY)
+        await channel.delete(reason="Timeout do formulário")
     finally:
         sessions.pop(user.id, None)
 
