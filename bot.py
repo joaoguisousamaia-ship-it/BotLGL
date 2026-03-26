@@ -65,6 +65,7 @@ def get_guild_config(guild_id: int) -> dict:
         {
             "reviewer_role_id": None,
             "logs_channel_id": None,
+            "cargo_logs_channel_id": None,
             "transcripts_channel_id": None,
             "ticket_panel_channel_id": None,
             "ticket_category_id": None,
@@ -146,6 +147,27 @@ async def send_action_log(
         embed.add_field(name="Cargo", value=role.mention, inline=False)
     if extra:
         embed.add_field(name="Detalhes", value=extra, inline=False)
+    await log_channel.send(embed=embed)
+
+
+async def send_cargo_log(
+    guild: discord.Guild,
+    author: discord.abc.User,
+    action: str,
+    member: discord.Member,
+    role: discord.Role,
+) -> None:
+    guild_config = get_guild_config(guild.id)
+    log_channel = get_channel_from_config(guild, guild_config.get("cargo_logs_channel_id"))
+    if not isinstance(log_channel, discord.TextChannel):
+        return
+
+    color = discord.Color.green() if action == "Cargo adicionado" else discord.Color.red()
+    embed = discord.Embed(title="Log de Cargo", color=color, timestamp=datetime.utcnow())
+    embed.add_field(name="Autor", value=author.mention, inline=False)
+    embed.add_field(name="Acao", value=action, inline=False)
+    embed.add_field(name="Membro", value=member.mention, inline=False)
+    embed.add_field(name="Cargo", value=role.mention, inline=False)
     await log_channel.send(embed=embed)
 
 
@@ -441,6 +463,19 @@ async def logs(interaction: discord.Interaction, canal: discord.TextChannel) -> 
     )
 
 
+@bot.tree.command(name="logs_cargo", description="Define o canal de logs exclusivo para adicao e remocao de cargos")
+@app_commands.checks.has_permissions(administrator=True)
+async def logs_cargo(interaction: discord.Interaction, canal: discord.TextChannel) -> None:
+    if interaction.guild is None:
+        await interaction.response.send_message("Use este comando em um servidor.", ephemeral=True)
+        return
+    update_guild_config(interaction.guild.id, "cargo_logs_channel_id", canal.id)
+    await interaction.response.send_message(
+        f"Canal de logs de cargo definido para {canal.mention}.",
+        ephemeral=True,
+    )
+
+
 @bot.tree.command(name="publicar_ticket", description="Publica o painel com botao para abrir ticket")
 @app_commands.checks.has_permissions(administrator=True)
 async def publicar_ticket(interaction: discord.Interaction) -> None:
@@ -511,7 +546,7 @@ async def addcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
         return
     await membro.add_roles(cargo, reason=f"Adicionado por {ctx.author}")
     await ctx.send(f"Cargo {cargo.mention} adicionado a {membro.mention}.", delete_after=10)
-    await send_action_log(ctx.guild, ctx.author, "Cargo adicionado", member=membro, role=cargo)
+    await send_cargo_log(ctx.guild, ctx.author, "Cargo adicionado", member=membro, role=cargo)
 
 
 @commands.has_permissions(manage_roles=True)
@@ -536,7 +571,7 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
         return
     await membro.remove_roles(cargo, reason=f"Removido por {ctx.author}")
     await ctx.send(f"Cargo {cargo.mention} removido de {membro.mention}.", delete_after=10)
-    await send_action_log(ctx.guild, ctx.author, "Cargo removido", member=membro, role=cargo)
+    await send_cargo_log(ctx.guild, ctx.author, "Cargo removido", member=membro, role=cargo)
 
 
 @configurar_canal.error
