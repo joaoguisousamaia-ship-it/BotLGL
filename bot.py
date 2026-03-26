@@ -496,6 +496,11 @@ async def addcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
         await ctx.send("Este comando so funciona em servidor.", delete_after=10)
         return
 
+    try:
+        await ctx.message.delete()
+    except discord.HTTPException:
+        pass
+
     guild_config = get_guild_config(ctx.guild.id)
     if not user_is_staff(ctx.author, guild_config):
         await ctx.send("Voce nao tem permissao para usar este comando.", delete_after=10)
@@ -515,6 +520,11 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
     if ctx.guild is None or not isinstance(ctx.author, discord.Member):
         await ctx.send("Este comando so funciona em servidor.", delete_after=10)
         return
+
+    try:
+        await ctx.message.delete()
+    except discord.HTTPException:
+        pass
 
     guild_config = get_guild_config(ctx.guild.id)
     if not user_is_staff(ctx.author, guild_config):
