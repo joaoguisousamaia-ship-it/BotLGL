@@ -228,11 +228,13 @@ async def run_questionnaire(
     try:
         for index, question in enumerate(questions, start=1):
             embed = discord.Embed(
-                title=f"Pergunta {index} de {len(questions)}",
-                description=question,
-                color=discord.Color.blurple(),
+                title="📋 Formulário de Ticket",
+                description=f"**{question}**",
+                color=discord.Color.from_rgb(0, 149, 255),
             )
-            embed.set_footer(text="Responda nesta sala em ate 5 minutos")
+            embed.add_field(name="📌 Pergunta", value=f"`{index} de {len(questions)}`", inline=True)
+            embed.add_field(name="⏱️ Tempo Limite", value="`5 minutos`", inline=True)
+            embed.set_footer(text="✍️ Digite sua resposta nesta sala")
             await channel.send(content=user.mention, embed=embed)
 
             message = await bot.wait_for(
