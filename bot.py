@@ -259,7 +259,7 @@ async def run_questionnaire(
             guild_config.get("transcripts_channel_id") or guild_config.get("logs_channel_id"),
         )
         embed = build_transcript_embed(session, channel.mention)
-        view = TranscriptReviewView(session, user.id)
+        view = TranscriptReviewView(session, user.id, channel)
 
         if isinstance(transcript_channel, discord.TextChannel):
             review_message = await transcript_channel.send(embed=embed, view=view)
@@ -272,14 +272,9 @@ async def run_questionnaire(
         await channel.send(f"Tempo expirado para {user.mention}. Processo cancelado.")
     except Exception:
         logger.exception("Unexpected error in run_questionnaire for user %s", user.id)
-        await channel.send("Ocorreu um erro inesperado. O canal sera deletado em breve.")
+        await channel.send("Ocorreu um erro inesperado.")
     finally:
         sessions.pop(user.id, None)
-        await asyncio.sleep(CHANNEL_DELETION_DELAY_SECONDS)
-        try:
-            await channel.delete()
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-            logger.warning("Failed to delete ticket channel %s", channel.id)
 
 
 async def create_ticket_channel(interaction: discord.Interaction) -> discord.TextChannel | None:
@@ -314,10 +309,11 @@ def user_is_staff(member: discord.Member, guild_config: dict) -> bool:
 
 
 class TranscriptReviewView(discord.ui.View):
-    def __init__(self, transcript_data: dict, user_id: int):
+    def __init__(self, transcript_data: dict, user_id: int, channel: discord.TextChannel):
         super().__init__(timeout=None)
         self.transcript_data = transcript_data
         self.user_id = user_id
+        self.channel = channel
         self.message: discord.Message | None = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -336,6 +332,13 @@ class TranscriptReviewView(discord.ui.View):
             )
             return False
         return True
+
+    async def _delete_channel_after_delay(self) -> None:
+        await asyncio.sleep(CHANNEL_DELETION_DELAY_SECONDS)
+        try:
+            await self.channel.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            logger.warning("Failed to delete ticket channel %s", self.channel.id)
 
     @discord.ui.button(label="Aceitar", style=discord.ButtonStyle.green, custom_id="transcript_accept")
     async def accept(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
@@ -357,6 +360,7 @@ class TranscriptReviewView(discord.ui.View):
                 "Transcript aceito",
                 extra=f"Arquivo salvo: {file_name}",
             )
+        asyncio.create_task(self._delete_channel_after_delay())
 
     @discord.ui.button(label="Rejeitar", style=discord.ButtonStyle.red, custom_id="transcript_reject")
     async def reject(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
@@ -365,6 +369,7 @@ class TranscriptReviewView(discord.ui.View):
         await interaction.response.send_message("Transcript rejeitado.", ephemeral=True)
         if interaction.guild is not None:
             await send_action_log(interaction.guild, interaction.user, "Transcript rejeitado")
+        asyncio.create_task(self._delete_channel_after_delay())
 
 
 class TicketButtonView(discord.ui.View):
