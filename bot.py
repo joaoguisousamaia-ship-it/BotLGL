@@ -62,7 +62,7 @@ sessions: dict[int, dict] = {}
 
 def get_guild_config(guild_id: int) -> dict:
     guilds = config.setdefault("guilds", {})
-    return guilds.setdefault(
+    guild_cfg = guilds.setdefault(
         str(guild_id),
         {
             "reviewer_role_id": None,
@@ -73,8 +73,12 @@ def get_guild_config(guild_id: int) -> dict:
             "ticket_category_id": None,
             "staff_role_id": None,
             "legal_team_role_id": None,
+            "auto_roles": [],
         },
     )
+    if "auto_roles" not in guild_cfg:
+        guild_cfg["auto_roles"] = []
+    return guild_cfg
 
 
 def update_guild_config(guild_id: int, key: str, value: int | None) -> None:
@@ -362,21 +366,31 @@ class TranscriptReviewView(discord.ui.View):
                 extra=f"Arquivo salvo: {file_name}",
             )
             guild_config = get_guild_config(interaction.guild.id)
-            legal_role = get_role_from_config(interaction.guild, guild_config.get("legal_team_role_id"))
-            if legal_role is not None:
-                member = interaction.guild.get_member(self.user_id)
-                if member is not None:
+            member = interaction.guild.get_member(self.user_id)
+            if member is not None:
+                roles_to_assign: list[discord.Role] = []
+
+                legal_role = get_role_from_config(interaction.guild, guild_config.get("legal_team_role_id"))
+                if legal_role is not None:
+                    roles_to_assign.append(legal_role)
+
+                for role_id in guild_config.get("auto_roles", []):
+                    role = get_role_from_config(interaction.guild, role_id)
+                    if role is not None and role not in roles_to_assign:
+                        roles_to_assign.append(role)
+
+                for role in roles_to_assign:
                     try:
-                        await member.add_roles(legal_role, reason="Transcript aceito")
+                        await member.add_roles(role, reason="Transcript aceito")
                         await send_cargo_log(
                             interaction.guild,
                             interaction.user,
                             "Cargo adicionado",
                             member=member,
-                            role=legal_role,
+                            role=role,
                         )
                     except (discord.Forbidden, discord.HTTPException):
-                        logger.warning("Failed to assign legal team role to user %s", self.user_id)
+                        logger.warning("Failed to assign role %s to user %s", role.id, self.user_id)
         asyncio.create_task(self._delete_channel_after_delay())
 
     @discord.ui.button(label="Rejeitar", style=discord.ButtonStyle.red, custom_id="transcript_reject")
@@ -481,6 +495,79 @@ async def configurar_cargo_legal(interaction: discord.Interaction, cargo: discor
         f"Cargo Equipe Legal definido para {cargo.mention}.",
         ephemeral=True,
     )
+
+
+@bot.tree.command(
+    name="configurar_cargos_automaticos",
+    description="Gerencia os cargos atribuidos automaticamente ao aceitar um transcript",
+)
+@app_commands.describe(
+    acao="Acao a realizar: adicionar, remover ou listar cargos automaticos",
+    cargo="Cargo a adicionar ou remover da lista (opcional para listar)",
+)
+@app_commands.choices(
+    acao=[
+        app_commands.Choice(name="adicionar", value="adicionar"),
+        app_commands.Choice(name="remover", value="remover"),
+        app_commands.Choice(name="listar", value="listar"),
+    ]
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def configurar_cargos_automaticos(
+    interaction: discord.Interaction,
+    acao: app_commands.Choice[str],
+    cargo: discord.Role | None = None,
+) -> None:
+    if interaction.guild is None:
+        await interaction.response.send_message("Use este comando em um servidor.", ephemeral=True)
+        return
+
+    guild_config = get_guild_config(interaction.guild.id)
+    auto_roles: list[int] = guild_config.setdefault("auto_roles", [])
+
+    if acao.value == "listar":
+        if not auto_roles:
+            await interaction.response.send_message("Nenhum cargo automatico configurado.", ephemeral=True)
+            return
+        mentions = []
+        for role_id in auto_roles:
+            role = get_role_from_config(interaction.guild, role_id)
+            mentions.append(role.mention if role else f"(cargo removido: {role_id})")
+        await interaction.response.send_message(
+            f"Cargos automaticos configurados:\n" + "\n".join(f"• {m}" for m in mentions),
+            ephemeral=True,
+        )
+        return
+
+    if cargo is None:
+        await interaction.response.send_message(
+            "Informe um cargo para adicionar ou remover.", ephemeral=True
+        )
+        return
+
+    if acao.value == "adicionar":
+        if cargo.id in auto_roles:
+            await interaction.response.send_message(
+                f"O cargo {cargo.mention} ja esta na lista de cargos automaticos.", ephemeral=True
+            )
+            return
+        auto_roles.append(cargo.id)
+        save_config(config)
+        await interaction.response.send_message(
+            f"Cargo {cargo.mention} adicionado aos cargos automaticos.", ephemeral=True
+        )
+
+    elif acao.value == "remover":
+        if cargo.id not in auto_roles:
+            await interaction.response.send_message(
+                f"O cargo {cargo.mention} nao esta na lista de cargos automaticos.", ephemeral=True
+            )
+            return
+        auto_roles.remove(cargo.id)
+        save_config(config)
+        await interaction.response.send_message(
+            f"Cargo {cargo.mention} removido dos cargos automaticos.", ephemeral=True
+        )
 
 
 @bot.tree.command(name="configurar_logs_sets", description="Canal onde os transcripts serao publicados")
@@ -623,6 +710,7 @@ async def remcargo(ctx: commands.Context, membro: discord.Member, cargo: discord
 @configurar_revisor.error
 @configurar_staff.error
 @configurar_cargo_legal.error
+@configurar_cargos_automaticos.error
 @configurar_logs_sets.error
 @logs.error
 @publicar_ticket.error
